@@ -75,3 +75,121 @@ We implement a medallion architecture to structure and organize data effectively
 - Select Access Connector for Azure Databricks as the managed identity.
 
 - Click Review + Assign.
+
+## Step 4: Configure Databricks
+
+1.Open the Databricks resource and click Launch Workspace.
+
+2.Start a compute instance (this may take a few minutes).
+
+3.Set up external data access:
+
+  - Go to Catalog > External Data > Credentials > Create Credential.
+
+  - For the Access Connector ID, use the Resource ID of the Access Connector:
+
+  - Search for Access Connector, copy the Resource ID, and paste it here.
+
+  - Use this section to grant permissions or delete credentials as needed.
+
+4.Define external locations:
+
+ - Navigate to External Data > External Locations.
+
+ - Assign a name, select the storage credential, and specify the URL (use the container name and storage account name for bronze, silver, and gold).
+
+5.For detailed steps, refer to this helpful video: Pathfinder Analytics.
+
+## Step 5: Create and Execute Notebooks
+
+1.In the Databricks workspace, create a notebook for each layer (bronze, silver, gold).
+
+ - Add the relevant code for bronze from GitHub.
+
+ - Execute the notebook and refresh the Storage Account containers to verify updates.
+
+ - Repeat the process for silver and gold notebooks, adding the corresponding code.
+
+## Step 6: Install Required Libraries
+
+1.Before running the gold notebook, install the reverse_geocoder library.
+
+ - Navigate to Compute > Cluster > Libraries > + Install New Library.
+
+ - Select Source: PyPI and enter reverse_geocoder.
+
+ - Wait a few minutes for the installation to complete.
+
+2.Use cluster-level libraries for consistency and shared environments across notebooks.
+
+## Step 7: Optimize Gold Notebook Execution
+
+1.During execution, you may encounter performance bottlenecks with the reverse_geocoder Python UDF due to its non-thread-safe nature in distributed setups.
+
+ - Replace the UDF with alternatives like:
+
+ - Precomputed lookup tables.
+
+ - Pandas UDFs for vectorized execution.
+
+ - Batch processing geocoding outside Spark.
+
+## Step 8: Set Up Azure Data Factory (ADF)
+
+1.Create a new Azure Data Factory instance (in a new Resource Group if needed).
+
+2.Launch the ADF studio and create a pipeline:
+
+ - Drag the Notebook activity into the pipeline and configure it to run Databricks notebooks.
+
+ - Add a Databricks Linked Service:
+
+ - Use the AutoResolveIntegrationRuntime.
+
+ - Authenticate with an Access Token (recommended to store the token in a Key Vault for security).
+
+3.Pass parameters to the pipeline:
+
+ - For example, add parameters start_date and end_date with dynamic values using @formatDateTime expressions.
+
+4.Chain notebooks (bronze, silver, gold) to create a pipeline with success dependencies.
+
+5.Validate, publish, and run the pipeline.
+
+6.Schedule the pipeline to run at desired intervals (e.g., daily).
+
+## Step 9: Integrate Azure Synapse Analytics
+1.Create a Synapse Workspace:
+  - Link it to the existing Storage Account.
+  - Configure a file system and assign necessary permissions.
+2.Query Data Using Serverless SQL:
+  - Use OPENROWSET to query Parquet files stored in bronze, silver, and gold containers.
+  - Example query:
+     
+      sql
+         SELECT
+               country_code,
+               COUNT(CASE WHEN LOWER(sig_class) = 'low' THEN 1 END) AS low_count,
+               COUNT(CASE WHEN LOWER(sig_class) IN ('medium', 'moderate') THEN 1 END) AS medium_count,
+               COUNT(CASE WHEN LOWER(sig_class) = 'high' THEN 1 END) AS high_count
+         FROM
+               OPENROWSET(
+                  BULK 'https://<storage_account>.dfs.core.windows.net/gold/earthquake_events_gold/**',
+                  FORMAT = 'PARQUET'
+               ) AS [result]
+         GROUP BY
+               country_code;
+
+3.Create External Tables for structured access:
+  - Define external tables linked to the gold container for better organization and performance.
+4.Optimize Performance:
+  - Use indexing, partitioning, and caching as required.
+
+## Step 10: Visualization Options
+
+1.While Power BI can be used, it is not ideal for Mac users. Instead, consider using Synapse SQL for analytics and queries.
+2.Export data for further visualization or reporting if needed.
+
+
+## Acknowledgements
+This project was taught by Mr.Luke J Byrne, who provided excellent guidance.
